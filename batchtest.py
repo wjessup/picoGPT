@@ -24,7 +24,7 @@ def attention(q, k, v, mask):
     temp = q @ k.T / np.sqrt(q.shape[-1])
     masked = temp + mask
     soft = softmax(masked)
-    #print(soft)
+    #print("softmax = ", soft)
     out = soft @ v
     return out
     #return softmax(q @ k.T / np.sqrt(q.shape[-1]) + mask) @ v
@@ -58,7 +58,7 @@ def gpt2(inputs, max_length, wte, wpe, blocks, ln_f, n_head):
     
     causal_mask = (1 - np.tri(inputs_length)) * -1e10
     print("casual mask = \n", causal_mask)
-    new_causal_mask = np.pad(causal_mask, ((0,pad_len), (0,pad_len)), mode='constant', constant_values=-1e10)
+    new_causal_mask = np.pad(causal_mask, ((0, pad_len), (0,pad_len)), mode='constant', constant_values=-1e10)
 
     print("new mask =\n ", new_causal_mask)
 
@@ -70,39 +70,52 @@ def gpt2(inputs, max_length, wte, wpe, blocks, ln_f, n_head):
     x = x @ wte.T
 
     logits = x
-    next_id = np.argmax(logits[-1])
+    #print("logits = ", logits)
+    #print("logits[-1] = ", logits[-1])
+    logit_index = 1 + pad_len
+    #print("logit index = ", logit_index)
+    next_id = np.argmax(logits[-logit_index])
     print("generated next id = ", next_id)
     print("generated next token = ", encoder.decode([next_id]))
-    full = np.concatenate([inputs, [next_id]])
+
+    if pad_len > 0:
+        inputs = inputs[:-pad_len]
+
+    full = np.concatenate([inputs, [next_id], np.zeros(pad_len)])
+    print("generated sequence = ", full)
     print("generated sequence = ", encoder.decode(full))
     
-    return next_id
+    return full
 
 def generate(inputs, max_length, params, n_head, n_tokens_to_generate):  
     _max_length = max_length  
     from tqdm import tqdm
-    for id in tqdm(range(n_tokens_to_generate), "generating"):
-    
-        next_ids = np.apply_along_axis(lambda x: gpt2(x, _max_length, **params,n_head=n_head), 1, inputs)
+    for _ in tqdm(range(n_tokens_to_generate), "generating"):
+        #print("input datatype = ", inputs.dtype)
+        full = np.apply_along_axis(lambda x: gpt2(x, _max_length, **params,n_head=n_head), 1, inputs)
+        print("output datatype = ", full.dtype)
+        print("full = ", full.astype(int))
+        inputs = full.astype(int)
         #logits = gpt2(inputs[0], **params, n_head=n_head)
-        print("next_ids = ", next_ids)
+        #print("next_ids = ", next_ids)
 
-        next_ids = [[l] for l in next_ids]
-        print("next_ids = ", next_ids)
-
-        inputs = np.concatenate([inputs, next_ids], axis=-1)
-        print("\n\n concated inputs = ", inputs)
+        #next_ids = [[l] for l in next_ids]
+        #print("next_ids = ", next_ids)
+        
+        #inputs = np.concatenate([inputs, next_ids], axis=-1)
+        #print("\n\n concated inputs = ", inputs)
         
         print()
         _max_length += 1
-       
-    return list(inputs[len(inputs) - n_tokens_to_generate :])
+    return full
+    #return list(inputs[len(inputs) - n_tokens_to_generate :])
+
             
 def main(n_tokens_to_generate: int = 10, model_size: str = "124M", models_dir: str = "models"):
     
     
     #strings = ["not all heroes wear capes"] #this works properly
-    strings = ["not all heroes wear capes", "all tacos are tasty and del iciou s"] #this does not.
+    strings = ["not all heroes wear capes", "all tacos are tasty and del iciou"] #this does not.
     input_ids = [encoder.encode(a) for a in strings]
     print(input_ids)
     max_length = max(len(lst) for lst in input_ids)
@@ -120,6 +133,7 @@ def main(n_tokens_to_generate: int = 10, model_size: str = "124M", models_dir: s
 def count_padding(d):
     e = [e for e in d]
     e.reverse()
+
     count = 0
     for i in e:
         if (i == 0):
