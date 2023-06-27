@@ -38,12 +38,6 @@ def attention(q, k, v, mask):
     soft = softmax( z / np.sqrt(q.shape[-1]) + mask) 
     return soft @ v
 
-def attention_log(q, k, v, mask):
-    z = q @ k.T    
-    soft = softmax( z / np.sqrt(q.shape[-1]) ) 
-    y = soft @ v
-    return y
-
 def main(prompt: str, n_tokens_to_generate: int = 10):
 
     print("Prompt = ", prompt)
