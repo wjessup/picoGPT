@@ -70,7 +70,8 @@ def main(prompt: str, n_tokens_to_generate: int = 10):
 
 if __name__ == "__main__":
     import fire
-    prompt = "not all heroes wear capes"
+    #prompt = "not all heroes wear capes"
+    prompt = "The error you're seeing happens because you're trying to take the mean along an axis that doesn't exist in the given numpy array. In your case, the array x is a 1D array with shape (768,), and it only has one axis (axis 0). When you use axis=-1 in the np.mean function, it's referring to the last axis in the array. For a 1D array, axis=-1 and axis=0 refer to the same single axis that the array has. For a 2D array, axis=-1 would refer to the second axis (or axis 1), and so on. To fix this error, you can either set axis=0 or axis=-1 when your array is a 1D array. If you want your code to handle arrays of different dimensions, you could add a condition to check the number of dimensions in your array before calculating the mean:"
     #main(prompt)
     execution_time = timeit.timeit(lambda: fire.Fire(main(prompt)), number=10)
     print(f"Execution time: {execution_time} seconds")
