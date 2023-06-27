@@ -57,14 +57,19 @@ def main(prompt: str, n_tokens_to_generate: int = 10):
     causal_mask = (1 - np.tri(len(inputs))) * -1e10
 
     for _ in range(n_tokens_to_generate): 
-        residual_stream = params['wte'][inputs] + params['wpe'][range(len(inputs))]  
+         
+        if _ == 0:
+            residual_stream = params['wte'][inputs] + params['wpe'][range(len(inputs))] 
+        else:
+            residual_stream = params['wte'][inputs[-1]] + params['wpe'][len(inputs)] #only grab info for last token
+
          #potentially move this outside the loop. the mask is only necessary on the first pass
         for block_id, block in enumerate(params['blocks']):
             
             # on the first pass we process all tokens to create the cache
             # on subsequent passes we only process the last token and append the results to the cache
-            if _ != 0 and block_id == 0:
-                residual_stream = residual_stream[-1]
+            #if _ != 0 and block_id == 0:
+            #    residual_stream = residual_stream[-1]
 
             ln1 = layer_norm(residual_stream, **block['ln_1'])
 
