@@ -65,22 +65,15 @@ def main(prompt: str, n_tokens_to_generate: int = 10):
         else:
             residual_stream = params['wte'][inputs[-1]] + params['wpe'][len(inputs)] #only grab info for last token
 
-         #potentially move this outside the loop. the mask is only necessary on the first pass
+        
         for block_id, block in enumerate(params['blocks']):
             
-            # on the first pass we process all tokens to create the cache
-            # on subsequent passes we only process the last token and append the results to the cache
-            #if _ != 0 and block_id == 0:
-            #    residual_stream = residual_stream[-1]
-
             ln1 = layer_norm(residual_stream, **block['ln_1'])
 
             qkv = linear(ln1, **block['attn']['c_attn']) # [n_seq, n_embd] @ [n_embd, 3*n_embd] -> [n_seq, 3*n_embd]
     
             split_x = np.split(qkv, 3, axis=-1)
             qkv_heads = np.array(list(map(lambda x: np.split(x, hparams['n_head'], axis=-1), split_x))) 
-
-            #print(qkv_heads.shape) # (3, 12, 6, 64)
 
             if _ == 0:
                 cache_k[block_id] = qkv_heads[1] 
@@ -100,11 +93,8 @@ def main(prompt: str, n_tokens_to_generate: int = 10):
 
                 out_heads = []
                 for head_id, (q, k, v) in enumerate(zip(*qkv_heads)):
-                    #print("head ", head_id)
-                    #print(v.shape)
                     k = cache_k[block_id][head_id]
                     v = cache_v[block_id][head_id]
-                    #print(v.shape)
                     out = attention_log(q, k, v, causal_mask)
                     out_heads.append(out)
 
@@ -119,8 +109,6 @@ def main(prompt: str, n_tokens_to_generate: int = 10):
             residual_stream = residual_stream + mlp_out
 
 
-        #print("token = ", _)
-        #print(residual_stream.shape)
         if _ == 0:
             logits = layer_norm(residual_stream[-1], **params['ln_f']) @ params['wte'].T # slice X here to save some computations
         else:
