@@ -31,6 +31,7 @@ def attention(q, k, v, mask):
     soft = softmax(q @ k.T / np.sqrt(q.shape[-1]) + mask)
     return soft @ v
 
+
 def gpt2(inputs, wte, wpe, blocks, ln_f):
     x = wte[inputs] + wpe[range(len(inputs))] 
     pad_len = count_padding(inputs)
@@ -53,7 +54,7 @@ def gpt2(inputs, wte, wpe, blocks, ln_f):
         ffn_prenorm = layer_norm(x, **block['ln_2'])
         x = x + ffn(ffn_prenorm, **block['mlp'])
 
-    logits = layer_norm(x, **ln_f) @ wte.T
+    logits = layer_norm(x[-1], **ln_f) @ wte.T
     
     logit_index = 1 + pad_len
     next_id = np.argmax(logits[-logit_index])
@@ -69,8 +70,14 @@ def main(prompts: list, n_tokens_to_generate: int = 10, model_size: str = "124M"
     input_ids = [encoder.encode(a) for a in prompts]    
     max_length = max(len(lst) for lst in input_ids)
     padded_inputs = [np.pad(lst, (0, max_length - len(lst)), mode='constant') for lst in input_ids]
+    print("padded inputs = ", padded_inputs)
+
+    #masks = [count_padding(item) for item in padded_inputs]
+    #print("masks = ", masks)
     
     for _ in range(n_tokens_to_generate):
+
+        #padded_inputs = gpt2(padded_inputs, masks, **params)
         padded_inputs = np.apply_along_axis(lambda x: gpt2(x, **params), 1, padded_inputs).astype(int)
         print([encoder.decode(remove_padding(output)) for output in padded_inputs][0], end="\r", flush=True) #only printing first batch to see progress
         

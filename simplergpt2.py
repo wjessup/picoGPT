@@ -1,5 +1,6 @@
 import timeit
 import numpy as np
+#from jax import grad, jit, vmap
 from utils import load_encoder_hparams_and_params
 encoder, hparams, params = load_encoder_hparams_and_params("124M", "models")
 
@@ -18,8 +19,10 @@ def layer_norm(x, g, b, eps: float = 1e-5):
 def linear(x, w, b):
     return x @ w + b
 
-def ffn(x, c_fc, c_proj):
-    return linear(gelu(linear(x, **c_fc)), **c_proj)
+def mlp(x, c_fc, c_proj): 
+    l1 = linear(x, **c_fc) # increase to 4x embed -> [input x 3072]
+    g = gelu(l1) # magic
+    return linear(g, **c_proj) # decrease back to embed -> [input x 768]
 
 def attention(q, k, v, mask):
     soft = softmax(q @ k.T / np.sqrt(q.shape[-1]) + mask) 
@@ -28,36 +31,46 @@ def attention(q, k, v, mask):
 def main(prompt: str, n_tokens_to_generate: int = 10):
 
     print("Prompt = ", prompt)
-    inputs = encoder.encode(prompt)
+    inputs = np.array(encoder.encode(prompt))
     assert len(inputs) + n_tokens_to_generate < hparams["n_ctx"]
 
     for _ in range(n_tokens_to_generate): 
-        x = params['wte'][inputs] + params['wpe'][range(len(inputs))]  
+        residual_stream = params['wte'][inputs] + params['wpe'][range(len(inputs))]  
         causal_mask = (1 - np.tri(len(inputs))) * -1e10
         for block in params['blocks']:
-            _residual = x
-            x = linear(layer_norm(x, **block['ln_1']), **block['attn']['c_attn'])
             
-            split_x = np.split(x, 3, axis=-1)
-            qkv_heads = list(map(lambda x: np.split(x, hparams['n_head'], axis=-1), split_x)) # size: [3, 12, input_len, 64]
-            out_heads = [attention(q, k, v, causal_mask) for q, k, v in zip(*qkv_heads)] # size: [12, input_len, 64]
+            ln1 = layer_norm(residual_stream, **block['ln_1'])
 
-            x = linear(np.hstack(out_heads), **block['attn']['c_proj'])
-            x = _residual + x
-        
-            x = x + ffn(layer_norm(x, **block['ln_2']), **block['mlp'])
-        logits = layer_norm(x, **params['ln_f']) @ params['wte'].T
+            # composition of linear maps is just another linear map.
+            # this is where you build 3 matricies, with enough to split into Q, K, V, each of 768. 
+            qkv = linear(ln1, **block['attn']['c_attn']) # [n_seq, n_embd] @ [n_embd, 3*n_embd] -> [n_seq, 3*n_embd]
+    
+            split_x = np.split(qkv, 3, axis=-1)
+            qkv_heads = list(map(lambda x: np.split(x, hparams['n_head'], axis=-1), split_x))
+            out_heads = [softmax(q @ k.T / np.sqrt(q.shape[-1]) + causal_mask) @ v for q, k, v in zip(*qkv_heads)]
+            attn_scores = linear(np.hstack(out_heads), **block['attn']['c_proj'])
+            
+            residual_stream = residual_stream + attn_scores
 
-        next_id = np.argmax(logits[-1])
-        inputs = np.append(inputs, [next_id])
-        print(encoder.decode([next_id]), end="", flush=True)
+            ln2 = layer_norm(residual_stream, **block['ln_2'])
+
+            mlp_out = mlp(ln2, **block['mlp'])
+
+            residual_stream = residual_stream + mlp_out
+
+        logits = layer_norm(residual_stream[-1], **params['ln_f']) @ params['wte'].T # slice X here to save some computations
+        next_id = np.argmax(logits)
+        inputs = np.append(inputs, next_id)
+        #print(inputs)
+        print(encoder.decode([int(next_id)]), end="", flush=True)
         
-    output_ids = list(inputs[len(inputs) - n_tokens_to_generate :])
+    output_ids = np.array(inputs[len(inputs) - n_tokens_to_generate :])
     print("\n all done!")
     return encoder.decode(output_ids)
 
 if __name__ == "__main__":
     import fire
     prompt = "not all heroes wear capes"
-    execution_time = timeit.timeit(lambda: fire.Fire(main(prompt)), number=1)
+    #main(prompt)
+    execution_time = timeit.timeit(lambda: fire.Fire(main(prompt)), number=10)
     print(f"Execution time: {execution_time} seconds")
